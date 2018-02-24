@@ -109,7 +109,7 @@ def backup(source, backup_target, exclude_file=None, dry_run=False, incremental=
 
     rsync_args.append(source)
     rsync_args.append(backup_target)
-    if kwargs.get('debug', False):
+    if debug:
         print 'Running the following rsync command:'
         print rsync_args
 
