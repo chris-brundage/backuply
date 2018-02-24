@@ -10,44 +10,59 @@ import subprocess
 
 
 def validate_backup_volume(backup_volume, cur_dir=None, *args, **kwargs):
+    """Recursive function that walks up a path to check if it's in /etc/fstab and then verifies that it's mounted.
+
+    Also, verifies that the path exists.
+    """
     if cur_dir is None:
         cur_dir = backup_volume
 
-    slash_regex = r'(.*)(/[ \t]?$)'
-    regex_check = re.sub(slash_regex, r'\1/?', cur_dir, re.IGNORECASE)
+    # Strip trailing slashes off the path
+    cur_dir = cur_dir.rstrip('/')
 
+    # Look for an entry in /etc/fstab matching cur_dir
     with open('/etc/fstab', 'r') as f:
         found = False
         for line in f:
-            if re.search(regex_check, line):
+            if re.search(cur_dir, line):
                 if kwargs.get('verbose', False):
                     print '%s was found in /etc/fstab' % cur_dir
                 found = True
                 break
 
+    # Chop the end of the path off and try again
     if not found:
         try:
-            cur_dir = cur_dir.split('/')
-            del cur_dir[-1]
-            if len(cur_dir) <= 1:
+            cur_dir = os.path.split(cur_dir)
+            # If we've reached the point where we're checking /, 
+            # then it's safe enough to assume the path is not a mount point
+            if cur_dir[-1] is None or cur_dir[-1] == '':
                 return 0
 
-            cur_dir = '/'.join(cur_dir)
+            cur_dir = cur_dir[0] 
 
             return validate_backup_volume(backup_volume, cur_dir)
         except (IndexError, TypeError):
             pass
+    # Check that the path is mounted and exists
     else:
         if not os.path.ismount(cur_dir):
             raise IOError(errno.ENXIO, '%s is not mounted.' % cur_dir)
-        elif not os.path.isdir(backup_volume):
-            raise IOError(errno.ENOTDIR, '%s was not found or is not a directory.' % backup_volume)
+    # Now that everything else checks out, let's make sure the path actually exists.
+    if not os.path.isdir(backup_volume):
+        raise IOError(errno.ENOTDIR, '%s was not found or is not a directory.' % backup_volume)
 
     return 0
 
 
 def backup(backup_volume, exclude_file=None, *args, **kwargs):
+    """Constructs arguments to pass to rsync based on arguments passed to the script.
+
+    Raises a subprocess.CalledProcessError if anything goes wrong with the rysnc
+    """
+    # Make sure the backup destination is valid
     validate_backup_volume(backup_volume, *args, **kwargs)
+    # Make sure any specified exclude files actually exist.
     if exclude_file is not None:
         if not os.path.exists(exclude_file):
             raise IOError(errno.ENOENT, 'The exclude file %s was not found.' % exclude_file)
