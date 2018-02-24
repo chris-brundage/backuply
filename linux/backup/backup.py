@@ -79,6 +79,10 @@ def backup(source, backup_target, exclude_file=None, dry_run=False, incremental=
         if not os.path.exists(exclude_file):
             raise IOError(errno.ENOENT, 'The exclude file %s was not found.' % exclude_file)
 
+    # Make sure backup target ends in a trailing slash so rsync doesn't screw us
+    if not backup_target.endswith('/'):
+        backup_target += '/'
+
     rsync_args = [
         'rsync',
         '-a',
