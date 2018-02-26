@@ -2,10 +2,15 @@
 from __future__ import absolute_import, division
 import argparse
 import backuply
+import errno
+import os
 import subprocess
 
 
 def main():
+    if os.geteuid() != 0:
+        print 'This script must be run with root privileges.'
+        return errno.EPERM
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--simulate', dest='simulate', action='store_true',
                         help='Print the backup command that would execute and then exit.')
