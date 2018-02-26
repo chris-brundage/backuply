@@ -32,7 +32,7 @@ class BackupJob(object):
             else:
                 old_backup = os.path.split(self.backup_target)
                 old_backup_filename = old_backup[-1].replace('.tar.gz',
-                                                             '{:%Y.%m.%d.%H.%M.%S}.tar.gz'.format(
+                                                             '.{:%Y.%m.%d.%H.%M.%S}.tar.gz'.format(
                                                                  now))
                 old_backup = os.path.join(old_backup[0], old_backup_filename)
                 os.rename(self.backup_target, old_backup)
