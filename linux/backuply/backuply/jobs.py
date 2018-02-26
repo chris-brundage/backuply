@@ -303,6 +303,9 @@ class TarBackupJob(BackupJob):
             '--exclude=%s' % self.backup_target,
         ]
 
+        if self.verbose:
+            tar_args.append('--verbose')
+
         for exclude in self.extra_excludes:
             tar_args.append('--exclude=%s' % exclude)
 
