@@ -6,7 +6,7 @@ setup(
     author='Chris Brundage',
     author_email='christopher.m.brundage@gmail.com',
     description='Simple backup client meant for running as a cron.',
-    url='https://github.com/chris-brundage/scripts',
+    url='https://github.com/chris-brundage/backuply',
     packages=[
         'backuply',
     ],
