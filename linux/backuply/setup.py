@@ -15,7 +15,7 @@ setup(
     ],
     license='LGPLv2',
     data_files=[
-        ('/usr/local/sbin', ['sbin/backuply']),
+        ('/usr/local/sbin', ['data_files/sbin/backuply']),
     ],
     include_package_data=True,
 )
