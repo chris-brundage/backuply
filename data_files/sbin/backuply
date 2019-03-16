@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-from __future__ import absolute_import, division
+#!/usr/bin/env python3
 import argparse
 import backuply
 import errno
@@ -9,7 +8,7 @@ import subprocess
 
 def main():
     if os.geteuid() != 0:
-        print 'This script must be run with root privileges.'
+        print('This script must be run with root privileges.')
         return errno.EPERM
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--simulate', dest='simulate', action='store_true',
@@ -34,19 +33,19 @@ def main():
 
         backup_job = backuply.create_backup_job(**backup_job_args)
         if args.simulate:
-            print ' '.join(backup_job.backup_command)
+            print(' '.join(backup_job.backup_command))
             return 0
         backup_job.backup()
 
         return 0
     except backuply.InvalidBackupTarget as e:
-        print e
-        return 1
+        print(e)
+        return e.errno
     except IOError as e:
-        print e.strerror
+        print(e.strerror)
         return e.errno
     except subprocess.CalledProcessError as e:
-        print e
+        print(e)
         return e.returncode
     except KeyboardInterrupt:
         return 1

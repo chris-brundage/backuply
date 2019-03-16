@@ -1,15 +1,50 @@
-from abc import ABCMeta, abstractproperty
 import datetime
 import errno
+import logging
 import os
 import re
 import subprocess
+from abc import ABC, abstractmethod
+from logging.handlers import SysLogHandler
+from .errors import InvalidBackupTarget
 
 
-class BackupJob(object):
-    __metaclass__ = ABCMeta
+class BackupJob(ABC):
+    @abstractmethod
+    def backup(self, *args, **kwargs): pass
 
-    @abstractproperty
+    @staticmethod
+    @abstractmethod
+    def add_arguments(parser): pass
+
+    @staticmethod
+    def setup_logging(debug, verbose, logger_name='backuply'):
+        pass
+
+    def __init__(self, verbose=False, debug=False, *args, **kwargs):
+        self.backup_type = self.__class__.backup_type
+
+        self.verbose = verbose
+        self.debug = debug
+
+        self.logger = kwargs.get('logger')
+        if self.logger is None:
+            self.logger = logging.getLogger('backuply')
+            self.logger.addHandler(SysLogHandler())
+
+        if debug:
+            self.logger.setLevel(logging.DEBUG)
+        elif verbose:
+            self.logger.setLevel(logging.INFO)
+        elif kwargs.get('quiet', False):
+            self.logger.setLevel(logging.CRITICAL)
+        else:
+            self.logger.setLevel(logging.WARNING)
+
+
+class ShellBackupJob(BackupJob):
+    @property
+    @abstractmethod
     def backup_command(self): pass
 
     def backup(self, *args, **kwargs):
@@ -25,8 +60,11 @@ class BackupJob(object):
 
         if os.path.isfile(self.backup_target):
             if not overwrite:
-                raise IOError(errno.EEXIST,
-                              'The backup target %s already exists. Please specify a new filename, the --force switch, or delete it.' % self.backup_target)
+                raise InvalidBackupTarget(errno.EEXIST,
+                                          'The backup target {} already exists. Please specify a new filename, the --force switch, or delete it.'.format(
+                                              self.backup_target),
+                                          self.backup_target,
+                                          self.backup_type)
             # If we're overwriting the old backup,
             # move it out of the way until the backup completes successfully.
             else:
@@ -45,7 +83,7 @@ class BackupJob(object):
                 if e.errno != errno.ENOENT:
                     raise e
                 if self.verbose:
-                    print e
+                    print(e)
 
         return job_retval
 
@@ -62,28 +100,26 @@ class BackupJob(object):
         :param args:
         :param kwargs:
         """
+        super().__init__(verbose, debug, *args, **kwargs)
+
         if not os.path.exists(source):
             raise IOError(errno.ENOENT,
-                          'The backup source %s does not exist.' % source)
+                          'The backup source {} does not exist.'.format(source))
         # Make sure source ends with a trailing slash
         self.source = source
         if not source.endswith('/'):
             self.source += '/'
+
         # Validate the state of the backup target
-        try:
-            self.backup_target = BackupJob.validate_backup_target(backup_target,
-                                                                  backup_target_file_required)
-        except TypeError as e:
-            raise InvalidBackupTarget(str(e), backup_target, getattr(self, 'backup_type'))
+        self.backup_target = ShellBackupJob.validate_backup_target(backup_target,
+                                                                   backup_target_file_required)
 
         if exclude_file is not None:
             if not os.path.exists(exclude_file):
                 raise IOError(errno.ENOENT,
-                              'The exclude file %s does not exist.' % exclude_file)
+                              'The exclude file {} does not exist.'.format(
+                                  exclude_file))
         self.exclude_file = exclude_file
-
-        self.verbose = verbose
-        self.debug = debug
 
     @staticmethod
     def validate_backup_target(backup_target, file_required=False, cur_dir=None, *args, **kwargs):
@@ -101,11 +137,13 @@ class BackupJob(object):
         backup_dir = None
         if file_required:
             if os.path.isdir(backup_target):
-                raise TypeError('backup_target must be a file.')
+                raise InvalidBackupTarget(errno.EISDIR, 'backup_target must be a file', backup_target)
             if os.path.isfile(backup_target):
                 backup_dir = os.path.split(backup_target)[0]
         elif os.path.isfile(backup_target):
-            raise TypeError('backup_target must be a directory.')
+            raise InvalidBackupTarget(errno.ENOTDIR,
+                                      'backup_target must be a directory',
+                                      backup_target)
 
         # On the first pass cur_dir should be the backup target or the target's directory
         if cur_dir is None:
@@ -119,8 +157,7 @@ class BackupJob(object):
             found = False
             for line in f:
                 if re.search(cur_dir, line):
-                    if kwargs.get('verbose', False):
-                        print '%s was found in /etc/fstab' % cur_dir
+                    logging.info('{} was found in /etc/fstab'.format(cur_dir))
                     found = True
                     break
 
@@ -133,24 +170,28 @@ class BackupJob(object):
                 if cur_dir[-1] is not None and cur_dir[-1] != '':
                     cur_dir = cur_dir[0]
 
-                    return BackupJob.validate_backup_target(backup_target,
-                                                            file_required, cur_dir,
-                                                            *args, **kwargs)
-            except (IndexError, TypeError):
+                    return ShellBackupJob.validate_backup_target(backup_target,
+                                                                 file_required, cur_dir,
+                                                                 *args, **kwargs)
+            except (IndexError, InvalidBackupTarget):
                 pass
         # Check that the path is mounted and exists
         else:
             if not os.path.ismount(cur_dir):
-                raise IOError(errno.ENXIO, '%s is not mounted.' % cur_dir)
+                raise InvalidBackupTarget(errno.ENXIO,
+                                          '{} is not mounted.'.format(cur_dir),
+                                          backup_target)
 
         # Now that everything else checks out, let's make sure the path actually exists.
         if not os.path.isdir(backup_target) and not file_required:
-            raise IOError(errno.ENOTDIR,
-                          '%s is not a directory.' % backup_target)
+            raise InvalidBackupTarget(errno.ENOTDIR,
+                                      '{} is not a directory'.format(
+                                          backup_target), backup_target)
         elif backup_dir is not None and not os.path.isdir(backup_dir):
-            raise IOError(errno.ENOTDIR,
-                          'The directory %s for backup target %s does not exist or is not a directory.' % (
-                          backup_dir, backup_target))
+            raise InvalidBackupTarget(errno.ENOTDIR,
+                                      'The directory {} for backup target {} does not exist or is not a directory.'.format(
+                                          backup_dir, backup_target),
+                                      backup_target)
 
         # Make sure the backup target ends with /
         if os.path.isdir(backup_target) and not backup_target.endswith('/'):
@@ -159,7 +200,7 @@ class BackupJob(object):
         return backup_target
 
 
-class RsyncBackupJob(BackupJob):
+class RsyncBackupJob(ShellBackupJob):
     backup_type = 'rsync'
 
     def __init__(self, source, backup_target, exclude_file=None, dry_run=False,
@@ -244,7 +285,7 @@ class RsyncBackupJob(BackupJob):
         return rsync_args
 
 
-class TarBackupJob(BackupJob):
+class TarBackupJob(ShellBackupJob):
     backup_type = 'tar'
 
     def __init__(self, source, backup_target, exclude_file=None, verbose=False,
@@ -329,20 +370,3 @@ class TarBackupJob(BackupJob):
         return tar_args
 
 
-class InvalidBackupTarget(Exception):
-    def __init__(self, message, backup_target=None, backup_type=None):
-        """
-
-        :param message:
-        :param backup_target:
-        :param backup_type:
-        """
-        super(InvalidBackupTarget, self).__init__(message)
-        self.backup_type = backup_type
-        self.backup_target = backup_target
-
-    def __str__(self):
-        out_str = 'Backup target %s is not valid for the type %s. The error was "%s"' % (
-            self.backup_target, self.backup_type, self.message)
-
-        return out_str

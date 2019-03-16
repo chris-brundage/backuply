@@ -1,5 +1,5 @@
-from __future__ import absolute_import, division
-from .jobs import BackupJob, RsyncBackupJob, TarBackupJob, InvalidBackupTarget
+from .errors import InvalidBackupTarget
+from .jobs import ShellBackupJob, RsyncBackupJob, TarBackupJob
 
 
 def create_backup_job(backup_type, *args, **kwargs):
