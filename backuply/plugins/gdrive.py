@@ -2,7 +2,6 @@ import backoff
 import errno
 import logging
 import mimetypes
-import googleapiclient
 import httplib2
 import shutil
 from abc import ABC, abstractmethod
@@ -14,6 +13,11 @@ from backuply.errors import InvalidConfigurationError
 
 
 def upload_giveup(e):
+    """Tells our retry decorator on resumable Google Drive uploads when to give up.
+
+    :param e: (apiclient.errors.HttpError) The exception raised by the Google API client.
+    :return: (bool)
+    """
     if e.resp.status not in (500, 502, 503, 504):
         return True
     return False
@@ -25,6 +29,12 @@ class GoogleApiClient(ABC):
     def credentials_file(self): pass
 
     def __init__(self, conf_dir: Path, cmd_flags, logger):
+        """Constructor.
+
+        :param conf_dir: (pathlib.Path) The directory where our Google API config files are.
+        :param cmd_flags: (argparse.Namespace) Flags passed from command line scripts.
+        :param logger: (logging.Logger) The logger for the application.
+        """
         if logger is None:
             logger = logging.basicConfig()
         self.logger = logger
@@ -50,6 +60,12 @@ class GoogleApiClient(ABC):
         self.credentials = self.set_credentials()
 
     def _client_secrets(self):
+        """If provided on the command line, installs our client secrets file in its desired location.
+
+        Otherwise it just returns the path to the client secrets file.
+
+        :return: (pathlib.Path) The client secrets filename.
+        """
         client_secrets_file = self.conf_dir.joinpath('client_secrets.json')
         try:
             if self.cmd_flags.client_secrets_file:
@@ -66,6 +82,10 @@ class GoogleApiClient(ABC):
         return client_secrets_file
 
     def set_credentials(self):
+        """Retrieves, validates, and stores OAuth credentials.
+
+        :return: The credentials.
+        """
         credentials = file.Storage(self.credentials_file).get()
 
         if credentials is None or credentials.invalid:
@@ -77,6 +97,12 @@ class GoogleApiClient(ABC):
         return credentials
 
     def set_service(self, api_name, api_version):
+        """Builds an API service against our authorized credentials.
+
+        :param api_name: (str) The name of the Google API.
+        :param api_version: (str) The API version.
+        :return: The appropriate Google API client object.
+        """
         self.http = self.credentials.authorize(self.http)
         return discovery.build(api_name, api_version, http=self.http)
 
@@ -90,11 +116,24 @@ class GoogleDrivePlugin(GoogleApiClient):
     def credentials_file(self):
         return self.conf_dir.joinpath('backuply_gdrive_credentials')
 
-    def __init__(self, conf_dir, base_dir, cmd_flags, logger, scope=None):
-        if scope is None:
+    def __init__(self, conf_dir, base_dir, cmd_flags, logger, *args, **kwargs):
+        """Constructor.
+
+        :param conf_dir: (pathlib.Path) The directory where our Google API config files are.
+        :param base_dir: (str) The base directory name on Google Drive.
+        :param cmd_flags: (argparse.Namespace) Flags passed from command line scripts.
+        :param logger: (logging.Logger) The logger for the application.
+        :param args:
+        :param kwargs:
+        """
+        try:
+            self.scope = kwargs['scope']
+        except KeyError:
             self.scope = GoogleDrivePlugin.default_scope
-        else:
-            self.scope = scope
+        try:
+            self.default_chunk_size = kwargs['default_chunk_size']
+        except KeyError:
+            self.default_chunk_size = 8 * 1024 * 1024
 
         super(GoogleDrivePlugin, self).__init__(conf_dir, cmd_flags, logger)
 
@@ -102,9 +141,14 @@ class GoogleDrivePlugin(GoogleApiClient):
         self.base_dir = self._validate_base_dir(base_dir)
 
     def _validate_base_dir(self, dir_name):
-        # r = self.service.files().list(orderBy='folder,name',
-        #                               q='name={}'.format(dir_name))
-        r = self.service.files().list(orderBy='folder,name')
+        """Makes sure the base directory for our directory structure
+            exists and is accessible on Google Drive.
+
+        :param dir_name: (str) The name of the directory.
+        :return:
+        """
+        r = self.service.files().list(orderBy='folder,name',
+                                      q='name=\'{}\''.format(dir_name))
         drive_dirs = r.execute()
         matched_dir = None
         if 'nextPageToken' not in drive_dirs:
@@ -121,9 +165,15 @@ class GoogleDrivePlugin(GoogleApiClient):
         if matched_dir is not None:
             return matched_dir
         return self._create_directory(dir_name)
-        # raise GoogleDriveDirectoryNotFound('{} was not found.'.format(dir_name))
 
     def _match_dirname(self, drive_dirs, filename):
+        """Loops through listed files in Google Drive API response,
+            and finds the one matching filename
+
+        :param drive_dirs: (dict) The Google Drive API response.
+        :param filename: (str) The filename.
+        :return: (dict) The matching Google Drive file.
+        """
         if len(drive_dirs['files']) <= 0:
             return
         for f in drive_dirs['files']:
@@ -140,6 +190,12 @@ class GoogleDrivePlugin(GoogleApiClient):
                 raise e
 
     def _create_directory(self, dir_name, parents=None):
+        """Creates a directory on Google Drive.
+
+        :param dir_name: (str) The name of the directory.
+        :param parents: (list) The parent directories.
+        :return: (dict) The Google Drive API response.
+        """
         metadata = {
             'name': dir_name,
             'mimeType': 'application/vnd.google-apps.folder',
@@ -158,12 +214,11 @@ class GoogleDrivePlugin(GoogleApiClient):
         :return: (dict) The Google Drive API response representing the directory.
         """
         parent_paths = [self.base_dir]
-        matched_dir = None
         for file_part in filename.parts[1:-1]:
-            q = 'name={}'.format(file_part)
+            q = 'name=\'{}\''.format(file_part)
             if len(parent_paths) > 0:
-                q += ' and {} in parents'.format(parent_paths[-1])
-            r = self.service.files().list(orderBy='folder,name')
+                q += ' and \'{}\' in parents'.format(parent_paths[-1]['id'])
+            r = self.service.files().list(orderBy='folder,name', q=q)
             drive_dirs = r.execute()
             if 'nextPageToken' not in drive_dirs:
                 matched_dir = self._match_dirname(drive_dirs, file_part)
@@ -183,24 +238,64 @@ class GoogleDrivePlugin(GoogleApiClient):
 
     @backoff.on_exception(backoff.expo, errors.HttpError, giveup=upload_giveup)
     def _resumable_upload(self, request, response=None):
+        """Does the actual work of uploading the file while retrying errors.
+
+        :param request: The Google API client request object
+        :param response: The Google API client response object
+        :return: The Google API client response object
+        """
         while response is None:
             status, response = request.next_chunk()
+            if status:
+                print('Uploaded {:.2f}%%.'.format(status.progress() * 100))
         return response
 
+    def upload_chunk_size(self, filename: Path):
+        """Sets a Google approved chunk size for uploading files.
+
+        https://developers.google.com/api-client-library/python/guide/media_upload#resumable-media-chunked-upload
+        See note about chunk_size restrictions
+
+        :param filename: (pathlib.Path) The file to be uploaded.
+        :return: (int) The upload chunk size in bytes.
+        """
+        file_size = filename.stat().st_size
+        chunk_limit = 256 * 1024
+
+        if file_size >= chunk_limit:
+            if self.default_chunk_size % chunk_limit == 0:
+                return self.default_chunk_size
+            else:
+                return self.default_chunk_size - (
+                            self.default_chunk_size % chunk_limit)
+        else:
+            return self.default_chunk_size
+
     def upload_file(self, src: Path, tries=0, parent_dir=None):
+        """Uploads a file to Google Drive, and preserves its directory structure.
+
+        :param src: (pathlib.Path) The file to be uploaded.
+        :param tries: (int) The number of times we've already tried to do this.
+        :param parent_dir: (dict) The parent directory on Google Drive.
+        :return: (tuple) A list of parent folder ids,
+            and the Google Drive API response for uploading the file.
+        """
         if not src.exists():
             raise IOError(errno.ENOENT,
                           'The source file {} does not exist'.format(src))
+
         mimetype, _ = mimetypes.guess_type(str(src), strict=False)
+        chunk_size = self.upload_chunk_size(src)
+        print(chunk_size)
+
         if parent_dir is None:
             parents = self._directory_structure(src)
             parents.reverse()
             parents = [p['id'] for p in parents]
-            # parents = parents[-1]['id']
         else:
             parents = [parent_dir['id']]
         upload_file = MediaFileUpload(str(src), mimetype=mimetype,
-                                      resumable=True)
+                                      resumable=True, chunksize=chunk_size)
         metadata = {
             'name': src.name,
             'parents': parents,
@@ -231,5 +326,5 @@ if __name__ == '__main__':
     home_dir = os.path.expanduser('~')
     conf_dir = Path(home_dir).joinpath('.backuply')
     g = GoogleDrivePlugin(conf_dir, 'Backuply', None, None)
-    ul_file = Path(home_dir).joinpath('baz.txt')
+    ul_file = Path(home_dir).joinpath('foo1.txt')
     print(g.upload_file(ul_file))
