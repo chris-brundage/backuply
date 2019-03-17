@@ -1,5 +1,6 @@
 import backoff
 import errno
+import googleapiclient.http
 import logging
 import mimetypes
 import httplib2
@@ -133,7 +134,7 @@ class GoogleDrivePlugin(GoogleApiClient):
         try:
             self.default_chunk_size = kwargs['default_chunk_size']
         except KeyError:
-            self.default_chunk_size = 8 * 1024 * 1024
+            self.default_chunk_size = googleapiclient.http.DEFAULT_CHUNK_SIZE
 
         super(GoogleDrivePlugin, self).__init__(conf_dir, cmd_flags, logger)
 
