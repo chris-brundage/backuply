@@ -1,5 +1,6 @@
 from .errors import InvalidBackupTarget
 from .jobs import ShellBackupJob, RsyncBackupJob, TarBackupJob
+from .plugins import GoogleDriveBackupJob
 
 
 def create_backup_job(backup_type, *args, **kwargs):
@@ -14,8 +15,10 @@ def create_backup_job(backup_type, *args, **kwargs):
         return RsyncBackupJob(*args, **kwargs)
     if backup_type == TarBackupJob.backup_type:
         return TarBackupJob(*args, **kwargs)
+    if backup_type == GoogleDriveBackupJob.backup_type:
+        return GoogleDriveBackupJob(*args, **kwargs)
 
-    raise TypeError('No job defined for backup_type %s' % backup_type)
+    raise TypeError('No job defined for backup_type {}'.format(backup_type))
 
 
 def add_arguments(parser):
@@ -27,8 +30,12 @@ def add_arguments(parser):
     backup_types = [
         RsyncBackupJob.backup_type,
         TarBackupJob.backup_type,
+        GoogleDriveBackupJob.backup_type,
     ]
 
+    parser.add_argument('--config-dir', dest='conf_dir',
+                        metavar='/path/to/conf_dir',
+                        help='Override the default Backuply configuration directory.')
     parser.add_argument('--backup-type', '-t', dest='backup_type',
                         choices=backup_types,
                         default=RsyncBackupJob.backup_type,
@@ -39,7 +46,7 @@ def add_arguments(parser):
     parser.add_argument('--exclude-file', dest='exclude_file',
                         metavar='/path/to/exclude/file',
                         help='The path to a list of files to exclude from the backup. Should follow the format of rsync\'s --exclude-from files.',
-                        required=True)
+                        required=False)
     parser.add_argument('--debug', '-d', dest='debug', action='store_true',
                         help='Print debug and verbose output.')
     parser.add_argument('--verbose', '-v', dest='verbose',
@@ -54,6 +61,7 @@ def add_arguments(parser):
     try:
         parser = RsyncBackupJob.add_arguments(parser)
         parser = TarBackupJob.add_arguments(parser)
+        parser = GoogleDriveBackupJob.add_arguments(parser)
     except AttributeError:
         pass
 

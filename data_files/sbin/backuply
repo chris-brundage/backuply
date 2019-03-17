@@ -4,12 +4,13 @@ import backuply
 import errno
 import os
 import subprocess
+from pathlib import Path
 
 
 def main():
-    if os.geteuid() != 0:
-        print('This script must be run with root privileges.')
-        return errno.EPERM
+    # if os.geteuid() != 0:
+    #     print('This script must be run with root privileges.')
+    #     return errno.EPERM
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--simulate', dest='simulate', action='store_true',
                         help='Print the backup command that would execute and then exit.')
@@ -18,6 +19,10 @@ def main():
     # Debug implies verbose
     if args.debug:
         args.verbose = True
+    if args.conf_dir is not None:
+        args.conf_dir = os.path.expanduser(args.conf_dir)
+        args.conf_dir = Path(args.conf_dir)
+    args.source = os.path.expanduser(args.source)
 
     # The parsed arguments contains the keyword arguments
     backup_job_args = dict(args.__dict__)

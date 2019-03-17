@@ -30,5 +30,8 @@ setup(
         'oauth2client < 4.0.0',
         'backoff',
         'ratelimit',
+        'python-dateutil',
+        'pytz',
+        'tzlocal',
     ],
 )

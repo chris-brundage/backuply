@@ -7,6 +7,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from logging.handlers import SysLogHandler
 from .errors import InvalidBackupTarget
+from .settings import Settings
 
 
 class BackupJob(ABC):
@@ -22,6 +23,10 @@ class BackupJob(ABC):
         pass
 
     def __init__(self, verbose=False, debug=False, *args, **kwargs):
+        if kwargs.get('conf_dir') is not None:
+            self.settings = Settings(kwargs['conf_dir'])
+        else:
+            self.settings = Settings()
         self.backup_type = self.__class__.backup_type
 
         self.verbose = verbose
