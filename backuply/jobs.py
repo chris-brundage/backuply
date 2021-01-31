@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod 
 import datetime
 import errno
 import logging
@@ -81,7 +82,8 @@ class ShellBackupJob(BackupJob):
                 os.rename(self.backup_target, old_backup)
 
         job_retval = subprocess.check_call(self.backup_command, *args, **kwargs)
-        if job_retval == 0 and old_backup is not None:
+        print(f'tar command exited with code {job_retval}')
+        if job_retval in (0, 2) and old_backup is not None:
             try:
                 os.remove(old_backup)
             except IOError as e:
@@ -374,4 +376,22 @@ class TarBackupJob(ShellBackupJob):
 
         return tar_args
 
+
+class InvalidBackupTarget(Exception):
+    def __init__(self, message, backup_target=None, backup_type=None):
+        """
+
+        :param message:
+        :param backup_target:
+        :param backup_type:
+        """
+        super(InvalidBackupTarget, self).__init__(message)
+        self.backup_type = backup_type
+        self.backup_target = backup_target
+
+    def __str__(self):
+        out_str = 'Backup target %s is not valid for the type %s. The error was "%s"' % (
+            self.backup_target, self.backup_type, self.args[0])
+
+        return out_str
 

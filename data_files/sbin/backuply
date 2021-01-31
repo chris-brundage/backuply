@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.8
 import argparse
 import backuply
 import errno
@@ -8,9 +8,9 @@ from pathlib import Path
 
 
 def main():
-    # if os.geteuid() != 0:
-    #     print('This script must be run with root privileges.')
-    #     return errno.EPERM
+    if os.geteuid() != 0:
+        print('This script must be run with root privileges.')
+        return errno.EPERM
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--simulate', dest='simulate', action='store_true',
                         help='Print the backup command that would execute and then exit.')

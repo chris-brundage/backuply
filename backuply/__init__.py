@@ -1,6 +1,7 @@
 from .errors import InvalidBackupTarget
 from .jobs import ShellBackupJob, RsyncBackupJob, TarBackupJob
 from .plugins import GoogleDriveBackupJob
+from .jobs import BackupJob, RsyncBackupJob, TarBackupJob, InvalidBackupTarget
 
 
 def create_backup_job(backup_type, *args, **kwargs):
