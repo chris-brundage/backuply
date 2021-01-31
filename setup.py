@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='backuply',
-    version='1.0.0',
+    version='1.0.2',
     author='Chris Brundage',
     author_email='christopher.m.brundage@gmail.com',
     description='Simple backup client meant for running as a cron.',

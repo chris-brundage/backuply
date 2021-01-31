@@ -1,4 +1,4 @@
-from abc import ABCMeta, abstractproperty
+from abc import ABC, abstractmethod 
 import datetime
 import errno
 import os
@@ -6,10 +6,9 @@ import re
 import subprocess
 
 
-class BackupJob(object):
-    __metaclass__ = ABCMeta
-
-    @abstractproperty
+class BackupJob(ABC):
+    @property
+    @abstractmethod
     def backup_command(self): pass
 
     def backup(self, *args, **kwargs):
@@ -38,14 +37,15 @@ class BackupJob(object):
                 os.rename(self.backup_target, old_backup)
 
         job_retval = subprocess.check_call(self.backup_command, *args, **kwargs)
-        if job_retval == 0 and old_backup is not None:
+        print(f'tar command exited with code {job_retval}')
+        if job_retval in (0, 2) and old_backup is not None:
             try:
                 os.remove(old_backup)
             except IOError as e:
                 if e.errno != errno.ENOENT:
                     raise e
                 if self.verbose:
-                    print e
+                    print(e)
 
         return job_retval
 
@@ -120,7 +120,7 @@ class BackupJob(object):
             for line in f:
                 if re.search(cur_dir, line):
                     if kwargs.get('verbose', False):
-                        print '%s was found in /etc/fstab' % cur_dir
+                        print('{} was found in /etc/fstab'.format(cur_dir))
                     found = True
                     break
 
@@ -343,6 +343,6 @@ class InvalidBackupTarget(Exception):
 
     def __str__(self):
         out_str = 'Backup target %s is not valid for the type %s. The error was "%s"' % (
-            self.backup_target, self.backup_type, self.message)
+            self.backup_target, self.backup_type, self.args[0])
 
         return out_str
